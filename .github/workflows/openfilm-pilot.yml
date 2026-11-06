@@ -1,0 +1,37 @@
+name: OpenFilm isolated synthetic pilot
+on:
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Python tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Generate synthetic video and export
+        run: |
+          mkdir -p demo
+          ffmpeg -hide_banner -nostdin -v error -f lavfi -i color=c=blue:s=540x960:r=30:d=3 -f lavfi -i sine=frequency=440:duration=3 -c:v libx264 -threads 2 -pix_fmt yuv420p -c:a aac -shortest -y demo/source.mp4
+          echo '{"video":"demo/source.mp4","start":0,"end":2.5,"fit":"contain","captions_reviewed":true,"captions":[{"start":0.4,"end":2.1,"text":"Тестовые титры"}]}' > demo/plan.json
+          python3 openfilm_export.py --plan demo/plan.json --out demo/film
+      - name: OpenFilm render (no user media)
+        working-directory: demo/film
+        run: |
+          npx -y openfilm@0.2.7 look
+          npx -y openfilm@0.2.7 render --subtitles
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openfilm-synthetic-result
+          path: |
+            demo/film/film.html
+            demo/film/*.mp4
+            demo/film/assets/source.vtt
+            demo/film/export.json
+          if-no-files-found: warn
